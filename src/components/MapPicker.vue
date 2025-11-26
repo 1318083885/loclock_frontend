@@ -7,6 +7,11 @@
         @keyup.enter="searchLocation"
         clearable
       >
+        <template #prepend>
+          <el-button @click="getCurrentLocation" :loading="locating" title="获取当前位置">
+            <el-icon><Location /></el-icon>
+          </el-button>
+        </template>
         <template #append>
           <el-button @click="searchLocation" :loading="searching">
             <el-icon><Search /></el-icon>
@@ -16,7 +21,7 @@
     </div>
     <div id="map" class="map-view"></div>
     <div class="map-tip">
-      点击地图选择中心点，当前半径: {{ radius }}米
+      💡 提示：可以点击<el-icon style="margin: 0 3px;"><Location /></el-icon>获取当前位置，或直接点击地图选择中心点 | 当前半径: {{ radius }}米
     </div>
   </div>
 </template>
@@ -50,6 +55,54 @@ const marker = ref(null)
 const circle = ref(null)
 const searchQuery = ref('')
 const searching = ref(false)
+const locating = ref(false)
+
+// 获取当前位置
+const getCurrentLocation = () => {
+  if (!navigator.geolocation) {
+    ElMessage.error('您的浏览器不支持定位功能')
+    return
+  }
+  
+  locating.value = true
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      // 浏览器返回的是WGS-84坐标
+      const wgsLat = position.coords.latitude
+      const wgsLng = position.coords.longitude
+      
+      // 转换为GCJ-02用于地图显示
+      const [gcjLat, gcjLng] = wgs84ToGcj02(wgsLat, wgsLng)
+      
+      map.value.setView([gcjLat, gcjLng], 15)
+      updateLocation(wgsLat, wgsLng, gcjLat, gcjLng)
+      
+      ElMessage.success('已定位到当前位置')
+      locating.value = false
+    },
+    (error) => {
+      let errorMsg = '定位失败'
+      switch(error.code) {
+        case error.PERMISSION_DENIED:
+          errorMsg = '用户拒绝了定位请求，请在浏览器设置中允许定位权限'
+          break
+        case error.POSITION_UNAVAILABLE:
+          errorMsg = '位置信息不可用'
+          break
+        case error.TIMEOUT:
+          errorMsg = '定位请求超时'
+          break
+      }
+      ElMessage.error(errorMsg)
+      locating.value = false
+    },
+    {
+      enableHighAccuracy: true,  // 高精度定位
+      timeout: 10000,           // 10秒超时
+      maximumAge: 0             // 不使用缓存
+    }
+  )
+}
 
 // 坐标转换工具函数
 const PI = 3.1415926535897932384626
@@ -182,36 +235,62 @@ const updateVisuals = (lat, lng, radius) => {
   }
 }
 
-// 搜索地点
+// 搜索地点（使用纯前端方案，无CORS问题）
 const searchLocation = async () => {
   if (!searchQuery.value) return
   
   searching.value = true
   try {
-    // 使用Nominatim API进行搜索 (返回的是WGS-84坐标)
-    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery.value)}`)
+    // 使用公开的Nominatim API（OSM），结合本地转换
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery.value)}&addressdetails=1&limit=1`,
+      {
+        headers: {
+          'Accept': 'application/json',
+        }
+      }
+    )
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+    
     const data = await response.json()
+    console.log('搜索结果:', data)
     
     if (data && data.length > 0) {
       const location = data[0]
-      const lat = parseFloat(location.lat)
-      const lng = parseFloat(location.lon)
+      const wgsLat = parseFloat(location.lat)
+      const wgsLng = parseFloat(location.lon)
       
       // 转换为GCJ-02用于显示
-      const [gcjLat, gcjLng] = wgs84ToGcj02(lat, lng)
+      const [gcjLat, gcjLng] = wgs84ToGcj02(wgsLat, wgsLng)
       
       map.value.setView([gcjLat, gcjLng], 13)
-      // 传递WGS-84保存，GCJ-02显示
-      updateLocation(lat, lng, gcjLat, gcjLng)
-      ElMessage.success(`已定位到: ${location.display_name.split(',')[0]}`)
+      updateLocation(wgsLat, wgsLng, gcjLat, gcjLng)
+      
+      const displayName = location.display_name.split(',').slice(0, 2).join(',')
+      ElMessage.success(`已定位到: ${displayName}`)
     } else {
-      ElMessage.warning('未找到相关地点')
+      ElMessage.warning('未找到相关地点，请尝试输入更详细的地址（如：北京市朝阳区）')
     }
   } catch (error) {
-    ElMessage.error('搜索失败，请重试')
+    console.error('搜索失败:', error)
+    ElMessage.error(`搜索失败: ${error.message}。提示：可以直接点击地图选择位置`)
   } finally {
     searching.value = false
   }
+}
+
+// BD-09 转 GCJ-02 (百度坐标 -> 高德坐标) - 保留以备将来使用
+const bd09ToGcj02 = (bdLat, bdLng) => {
+  const x = bdLng - 0.0065
+  const y = bdLat - 0.006
+  const z = Math.sqrt(x * x + y * y) - 0.00002 * Math.sin(y * Math.PI * 3000.0 / 180.0)
+  const theta = Math.atan2(y, x) - 0.000003 * Math.cos(x * Math.PI * 3000.0 / 180.0)
+  const gcjLng = z * Math.cos(theta)
+  const gcjLat = z * Math.sin(theta)
+  return [gcjLat, gcjLng]
 }
 
 // 监听props变化 (传入的是WGS-84坐标)

@@ -2,19 +2,19 @@
   <div>
     <h1>欢迎使用 LocLock</h1>
     <el-row :gutter="20">
-      <el-col :span="8" v-if="userStore.isSuperAdmin()">
+      <el-col :xs="24" :sm="12" :md="8" v-if="userStore.isSuperAdmin()">
         <el-card>
           <template #header>管理员总数</template>
           <div class="stat-number">{{ stats.totalAdmins }}</div>
         </el-card>
       </el-col>
-      <el-col :span="8">
+      <el-col :xs="24" :sm="12" :md="8">
         <el-card>
           <template #header>我的短链接</template>
           <div class="stat-number">{{ stats.totalLinks }}</div>
         </el-card>
       </el-col>
-      <el-col :span="8">
+      <el-col :xs="24" :sm="12" :md="8">
         <el-card>
           <template #header>{{ userStore.isSuperAdmin() ? '总访问量' : '今日访问量' }}</template>
           <div class="stat-number">{{ stats.todayVisits }}</div>
@@ -67,5 +67,31 @@ h1 {
   color: #409eff;
   text-align: center;
   padding: 20px 0;
+}
+
+:deep(.el-col) {
+  margin-bottom: 20px;
+}
+
+/* 移动端响应式 */
+@media (max-width: 768px) {
+  h1 {
+    font-size: 22px;
+  }
+  
+  .stat-number {
+    font-size: 28px;
+    padding: 15px 0;
+  }
+}
+
+@media (max-width: 480px) {
+  h1 {
+    font-size: 20px;
+  }
+  
+  .stat-number {
+    font-size: 24px;
+  }
 }
 </style>

@@ -34,8 +34,8 @@
         </el-radio-group>
       </div>
 
-      <!-- 表格 -->
-      <el-table :data="links" style="width: 100%" v-loading="loading" stripe border>
+      <!-- 桌面端表格 -->
+      <el-table v-if="!isMobile" :data="links" style="width: 100%" v-loading="loading" stripe border>
         <el-table-column prop="short_code" label="短链接" width="120">
           <template #default="{ row }">
             <el-tag effect="dark" type="primary" style="font-weight: bold; letter-spacing: 1px;">
@@ -111,40 +111,6 @@ const linkForm = ref({
   contact_wechat: '',
   expire_at: null,
   max_visits: 0,
-  is_active: true
-})
-...
-const editLink = (link) => {
-  editingLink.value = link
-  linkForm.value = {
-    short_code: link.short_code,
-    title: link.title || '',
-    target_url: link.target_url,
-    location_name: link.location_name,
-    center_lat: parseFloat(link.center_lat),
-    center_lng: parseFloat(link.center_lng),
-    radius_meters: link.radius_meters,
-    contact_wechat: link.contact_wechat || '',
-    expire_at: link.expire_at,
-    max_visits: link.max_visits || 0,
-    is_active: link.is_active
-  }
-  showDialog.value = true
-}
-...
-    linkForm.value = {
-      short_code: '',
-      title: '',
-      target_url: '',
-      location_name: '',
-      center_lat: 39.9042,
-      center_lng: 116.4074,
-      radius_meters: 1000,
-      contact_wechat: '',
-      expire_at: null,
-      max_visits: 0,
-      is_active: true
-    }
         
         <el-table-column prop="location_name" label="位置" width="150" show-overflow-tooltip />
         
@@ -213,6 +179,82 @@ const editLink = (link) => {
           </template>
         </el-table-column>
       </el-table>
+      <div v-else class="mobile-link-list" v-loading="loading">
+        <el-card v-for="link in links" :key="link.id" class="link-card" shadow="hover">
+          <div class="link-card-header">
+            <div class="link-info">
+              <el-tag effect="dark" type="primary" size="large" style="font-weight: bold;">
+                {{ link.short_code }}
+              </el-tag>
+              <el-tag v-if="link.is_banned" type="danger" effect="dark" size="small" style="margin-left: 8px;">封禁</el-tag>
+              <el-tag v-else-if="!link.is_active" type="info" effect="plain" size="small" style="margin-left: 8px;">禁用</el-tag>
+            </div>
+            <el-switch
+              v-model="link.is_active"
+              :loading="link.statusLoading"
+              @change="handleStatusChange(link)"
+              :disabled="link.is_banned && !userStore.isSuperAdmin()"
+            />
+          </div>
+
+          <div class="link-card-body">
+            <div v-if="link.title" class="link-field">
+              <span class="field-label">标题:</span>
+              <span class="field-value">{{ link.title }}</span>
+            </div>
+            
+            <div class="link-field">
+              <span class="field-label">目标:</span>
+              <a :href="link.target_url" target="_blank" class="field-value link-url">{{ link.target_url }}</a>
+            </div>
+            
+            <div class="link-field">
+              <span class="field-label">位置:</span>
+              <span class="field-value">{{ link.location_name || '-' }}</span>
+            </div>
+            
+            <div class="link-field">
+              <span class="field-label">范围:</span>
+              <span class="field-value">{{ link.radius_meters }}米</span>
+            </div>
+
+            <div class="stats-row">
+              <div class="stat-box">
+                <div class="stat-label">总访</div>
+                <div class="stat-value">{{ link.visit_count }}</div>
+              </div>
+              <div class="stat-box success">
+                <div class="stat-label">通过</div>
+                <div class="stat-value">{{ link.success_count }}</div>
+              </div>
+              <div class="stat-box error">
+                <div class="stat-label">拒绝</div>
+                <div class="stat-value">{{ link.denied_count }}</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="link-card-actions">
+            <el-button-group v-if="!showDeleted" class="mobile-actions">
+              <el-button size="small" @click="viewAnalytics(link)" icon="DataAnalysis">分析</el-button>
+              <el-button size="small" @click="copyLink(link)" icon="CopyDocument">复制</el-button>
+              <el-button size="small" @click="showQRCode(link)" icon="Picture">码</el-button>
+              <el-button size="small" type="primary" @click="editLink(link)" icon="Edit" :disabled="link.is_banned && !userStore.isSuperAdmin()">编辑</el-button>
+              <el-button 
+                size="small" 
+                :type="userStore.isSuperAdmin() && link.creator_username !== userStore.username ? 'warning' : 'danger'" 
+                @click="deleteLink(link)" 
+                :icon="Delete"
+              >
+                删除
+              </el-button>
+            </el-button-group>
+            <el-button v-else size="small" type="success" @click="restoreLink(link)" icon="RefreshLeft" style="width: 100%;">恢复</el-button>
+          </div>
+        </el-card>
+
+        <el-empty v-if="!loading && links.length === 0" description="暂无数据" />
+      </div>
       
       <!-- 分页 -->
       <div class="pagination-container">
@@ -394,9 +436,9 @@ const editLink = (link) => {
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Plus, CopyDocument, Picture, Edit, Delete, Link, Location, Connection, ChatDotRound, Download, CircleCloseFilled, RefreshLeft } from '@element-plus/icons-vue'
+import { Search, Plus, CopyDocument, Picture, Edit, Delete, Link, Location, Connection, ChatDotRound, Download, CircleCloseFilled, RefreshLeft, Document } from '@element-plus/icons-vue'
 import { linkAPI } from '../api'
 import { useUserStore } from '../stores/user'
 import QRCode from 'qrcode'
@@ -416,6 +458,7 @@ const showDeleted = ref(false)
 const currentPage = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
+const isMobile = ref(false)
 
 // 二维码相关
 const qrDialog = ref(false)
@@ -426,6 +469,20 @@ const customLogo = ref(null)
 
 // 位置历史建议
 const locationHistory = ref([])
+
+const checkMobile = () => {
+  isMobile.value = window.innerWidth < 768
+}
+
+onMounted(() => {
+  checkMobile()
+  window.addEventListener('resize', checkMobile)
+  fetchLinks()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', checkMobile)
+})
 
 const linkForm = ref({
   short_code: '',
@@ -716,9 +773,6 @@ const downloadQRCode = () => {
   ElMessage.success('二维码已下载')
 }
 
-onMounted(() => {
-  fetchLinks()
-})
 </script>
 
 <style scoped>
@@ -843,5 +897,213 @@ onMounted(() => {
   cursor: pointer;
   background: white;
   border-radius: 50%;
+}
+
+/* 移动端卡片布局 */
+.mobile-link-list {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.link-card {
+  transition: all 0.3s;
+}
+
+.link-card:hover {
+  transform: translateY(-2px);
+}
+
+.link-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #EBEEF5;
+}
+
+.link-info {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.link-card-body {
+  margin-bottom: 15px;
+}
+
+.link-field {
+  display: flex;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.field-label {
+  font-weight: 500;
+  color: #606266;
+  min-width: 50px;
+  flex-shrink: 0;
+}
+
+.field-value {
+  color: #303133;
+  word-break: break-all;
+  flex: 1;
+}
+
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  padding: 12px;
+  background: #F5F7FA;
+  border-radius: 4px;
+  margin-top: 12px;
+}
+
+.stat-box {
+  text-align: center;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 4px;
+}
+
+.stat-value {
+  font-size: 18px;
+  font-weight: bold;
+  color: #606266;
+}
+
+.stat-box.success .stat-value {
+  color: #67C23A;
+}
+
+.stat-box.error .stat-value {
+  color: #F56C6C;
+}
+
+.link-card-actions {
+  padding-top: 12px;
+  border-top: 1px solid #EBEEF5;
+}
+
+.mobile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+}
+
+.mobile-actions .el-button {
+  flex: 1;
+  min-width: calc(33.33% - 6px);
+  margin: 0 !important;
+  border-radius: 4px !important;
+}
+
+/* 移动端响应式样式 */
+@media (max-width: 768px) {
+  .link-manage-container {
+    padding: 10px;
+  }
+  
+  .card-header {
+    flex-direction: column;
+    gap: 10px;
+    align-items: stretch;
+  }
+  
+  .card-header .el-button {
+    width: 100%;
+  }
+  
+  .filter-container {
+   flex-direction: column;
+    align-items: stretch !important;
+    gap: 10px;
+  }
+  
+  .filter-container .el-input {
+    width: 100% !important;
+  }
+  
+  .filter-container .el-button {
+    width: 100%;
+    margin-left: 0 !important;
+  }
+  
+  .filter-container .el-radio-group {
+    width: 100%;
+  }
+  
+  /* 分页器 */
+  .pagination-container {
+    justify-content: center;
+    margin-top: 15px;
+  }
+  
+  :deep(.el-pagination) {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  
+  /* 对话框 */
+  :deep(.el-dialog) {
+    width: 95% !important;
+    margin-top: 5vh !important;
+  }
+  
+  :deep(.el-dialog__header) {
+    padding: 15px;
+  }
+  
+  :deep(.el-dialog__body) {
+    padding: 15px;
+    max-height: 70vh;
+    overflow-y: auto;
+  }
+  
+  :deep(.el-form-item__label) {
+    width: 80px !important;
+  }
+  
+  /* 表单列响应 */
+  :deep(.el-row .el-col-8) {
+    max-width: 100%;
+    flex: 0 0 100%;
+  }
+  
+  :deep(.el-row .el-col-12) {
+    max-width: 100%;
+    flex: 0 0 100%;
+  }
+  
+  .coord-inputs {
+    flex-direction: column;
+  }
+  
+  .coord-inputs .el-input-number {
+    width: 100% !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .title {
+    font-size: 16px;
+  }
+  
+  .mobile-actions .el-button {
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+  
+  .stat-value {
+    font-size: 16px;
+  }
 }
 </style>

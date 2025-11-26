@@ -133,17 +133,52 @@ const handleLogin = async () => {
   display: flex;
   justify-content: center;
   align-items: center;
-  height: 100vh;
+  min-height: 100vh;
+  padding: 20px;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
 .login-card {
   width: 400px;
+  max-width: 100%;
 }
 
 h2 {
   text-align: center;
   margin: 0;
   color: #303133;
+}
+
+.twofa-step {
+  text-align: center;
+}
+
+/* 移动端响应式 */
+@media (max-width: 768px) {
+  .login-container {
+    padding: 15px;
+  }
+  
+  .login-card {
+    width: 100%;
+  }
+  
+  h2 {
+    font-size: 20px;
+  }
+  
+  :deep(.el-card__header) {
+    padding: 15px;
+  }
+  
+  :deep(.el-card__body) {
+    padding: 15px;
+  }
+}
+
+@media (max-width: 480px) {
+  h2 {
+    font-size: 18px;
+  }
 }
 </style>
